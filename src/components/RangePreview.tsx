@@ -50,6 +50,7 @@ export function RangePreview({
                   pageNumber={range.start}
                   selected={selected}
                   onClick={() => onSelectRange(idx)}
+                  onRendered={onThumbRendered}
                 />
               ) : (
                 <InvalidCard page={range.start} />
@@ -64,6 +65,7 @@ export function RangePreview({
                     pageNumber={range.end}
                     selected={selected}
                     onClick={() => onSelectRange(idx)}
+                    onRendered={onThumbRendered}
                   />
                 ) : (
                   <InvalidCard page={range.end} />
