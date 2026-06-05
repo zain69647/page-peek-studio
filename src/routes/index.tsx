@@ -96,6 +96,16 @@ function Index() {
     }
   }, [parsed.pages, file]);
 
+  const handleClear = useCallback(() => {
+    setFile(null);
+    setPdf(null);
+    setTotalPages(0);
+    setPageInput("");
+    setSelectedRange(null);
+    setError(null);
+    fileBytesRef.current = null;
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
       <div className="mx-auto max-w-5xl px-4 py-10 md:py-16">
