@@ -8,9 +8,10 @@ interface PagePreviewProps {
   selected?: boolean;
   onClick?: () => void;
   width?: number;
+  onRendered?: () => void;
 }
 
-export function PagePreview({ pdf, pageNumber, selected, onClick, width = 140 }: PagePreviewProps) {
+export function PagePreview({ pdf, pageNumber, selected, onClick, width = 140, onRendered }: PagePreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
