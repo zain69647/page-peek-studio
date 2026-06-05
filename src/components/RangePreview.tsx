@@ -8,6 +8,7 @@ interface RangePreviewProps {
   ranges: ParsedRange[];
   selectedRangeIndex: number | null;
   onSelectRange: (index: number) => void;
+  onThumbRendered?: () => void;
 }
 
 export function RangePreview({
@@ -16,6 +17,7 @@ export function RangePreview({
   ranges,
   selectedRangeIndex,
   onSelectRange,
+  onThumbRendered,
 }: RangePreviewProps) {
   if (ranges.length === 0) return null;
 
