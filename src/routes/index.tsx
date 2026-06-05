@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { FileText, Upload, Download, AlertTriangle } from "lucide-react";
+import { FileText, Upload, Download, AlertTriangle, RotateCcw } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -95,6 +95,16 @@ function Index() {
       setExtracting(false);
     }
   }, [parsed.pages, file]);
+
+  const handleClear = useCallback(() => {
+    setFile(null);
+    setPdf(null);
+    setTotalPages(0);
+    setPageInput("");
+    setSelectedRange(null);
+    setError(null);
+    fileBytesRef.current = null;
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
@@ -195,9 +205,13 @@ function Index() {
           </section>
         )}
 
-        {/* Extract */}
+        {/* Extract / Clear */}
         {pdf && (
-          <div className="mt-6 flex justify-end">
+          <div className="mt-6 flex justify-end gap-3">
+            <Button size="lg" variant="outline" onClick={handleClear}>
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Clear
+            </Button>
             <Button size="lg" onClick={handleExtract} disabled={!canExtract || extracting}>
               <Download className="mr-2 h-4 w-4" />
               {extracting ? "Extracting…" : "Extract pages"}
