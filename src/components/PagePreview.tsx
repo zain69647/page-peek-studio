@@ -39,11 +39,15 @@ export function PagePreview({ pdf, pageNumber, selected, onClick, width = 140, o
         canvas.style.height = `${scaled.height}px`;
         const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
         await page.render({ canvas, viewport: scaled, transform }).promise;
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          onRendered?.();
+        }
       } catch (e) {
         if (!cancelled) {
           setError(true);
           setLoading(false);
+          onRendered?.();
         }
       }
     })();
