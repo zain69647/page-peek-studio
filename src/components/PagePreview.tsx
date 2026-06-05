@@ -29,8 +29,7 @@ export function PagePreview({ pdf, pageNumber, selected, onClick, width = 140 }:
         const scaled = page.getViewport({ scale });
         const canvas = canvasRef.current;
         if (!canvas) return;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
+        if (!canvas.getContext("2d")) return;
         const dpr = window.devicePixelRatio || 1;
         const outputScale = dpr;
         canvas.width = Math.floor(scaled.width * outputScale);
