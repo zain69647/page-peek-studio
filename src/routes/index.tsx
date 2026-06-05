@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { FileText, Upload, Download, AlertTriangle } from "lucide-react";
+import { FileText, Upload, Download, AlertTriangle, RotateCcw } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
