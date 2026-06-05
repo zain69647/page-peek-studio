@@ -32,12 +32,13 @@ export function PagePreview({ pdf, pageNumber, selected, onClick, width = 140 }:
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
         const dpr = window.devicePixelRatio || 1;
-        canvas.width = scaled.width * dpr;
-        canvas.height = scaled.height * dpr;
+        const outputScale = dpr;
+        canvas.width = Math.floor(scaled.width * outputScale);
+        canvas.height = Math.floor(scaled.height * outputScale);
         canvas.style.width = `${scaled.width}px`;
         canvas.style.height = `${scaled.height}px`;
-        ctx.scale(dpr, dpr);
-        await page.render({ canvasContext: ctx, viewport: scaled, canvas }).promise;
+        const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
+        await page.render({ canvas, viewport: scaled, transform }).promise;
         if (!cancelled) setLoading(false);
       } catch (e) {
         if (!cancelled) {
