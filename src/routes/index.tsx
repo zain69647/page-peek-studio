@@ -34,13 +34,23 @@ function Index() {
   const [loadingPdf, setLoadingPdf] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [renderedCount, setRenderedCount] = useState(0);
   const fileBytesRef = useRef<ArrayBuffer | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback(async (f: File) => {
+    if (f.type && f.type !== "application/pdf" && !f.name.toLowerCase().endsWith(".pdf")) {
+      setError("Please choose a PDF file.");
+      return;
+    }
     setError(null);
     setLoadingPdf(true);
     setPdf(null);
     setTotalPages(0);
+    setPageInput("");
+    setSelectedRange(null);
+    setRenderedCount(0);
     try {
       const bytes = await f.arrayBuffer();
       fileBytesRef.current = bytes;
@@ -64,10 +74,31 @@ function Index() {
 
   useEffect(() => {
     setSelectedRange(null);
-  }, [pageInput]);
+    setRenderedCount(0);
+  }, [pageInput, pdf]);
+
+  const expectedThumbs = useMemo(() => {
+    let n = 0;
+    for (const r of parsed.ranges) {
+      if (r.start <= totalPages) n += 1;
+      if (r.start !== r.end && r.end <= totalPages) n += 1;
+    }
+    return n;
+  }, [parsed.ranges, totalPages]);
+
+  const thumbsReady = expectedThumbs === 0 || renderedCount >= expectedThumbs;
+
+  const handleThumbRendered = useCallback(() => {
+    setRenderedCount((c) => c + 1);
+  }, []);
 
   const canExtract =
-    !!pdf && parsed.pages.length > 0 && parsed.invalid.length === 0 && parsed.outOfBounds.length === 0;
+    !!pdf &&
+    !loadingPdf &&
+    thumbsReady &&
+    parsed.pages.length > 0 &&
+    parsed.invalid.length === 0 &&
+    parsed.outOfBounds.length === 0;
 
   const handleExtract = useCallback(async () => {
     if (!fileBytesRef.current || parsed.pages.length === 0) return;
@@ -103,40 +134,90 @@ function Index() {
     setPageInput("");
     setSelectedRange(null);
     setError(null);
+    setRenderedCount(0);
     fileBytesRef.current = null;
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
+  const openPicker = useCallback(() => fileInputRef.current?.click(), []);
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const f = e.dataTransfer.files?.[0];
+      if (f) handleFile(f);
+    },
+    [handleFile],
+  );
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-background to-violet-50">
       <div className="mx-auto max-w-5xl px-4 py-10 md:py-16">
         <header className="mb-10 text-center">
-          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-4">
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-lg mb-4">
             <FileText className="h-6 w-6" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">PDF Page Extractor</h1>
+          <h1 className="text-3xl font-bold tracking-tight md:text-4xl bg-gradient-to-r from-primary to-violet-500 bg-clip-text text-transparent">
+            PDF Page Extractor
+          </h1>
           <p className="mt-2 text-muted-foreground">
             Pick pages, preview them, then export — all in your browser.
           </p>
         </header>
 
         {/* Upload */}
-        <section className="rounded-2xl border bg-card p-6 shadow-sm">
-          <Label htmlFor="file" className="text-sm font-medium">
-            1. Choose a PDF
-          </Label>
+        <section className="rounded-2xl border bg-card/80 backdrop-blur p-6 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <Label className="text-sm font-medium">1. Choose a PDF</Label>
+            {file && (
+              <Button size="sm" variant="ghost" onClick={handleClear}>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Upload new PDF
+              </Button>
+            )}
+          </div>
           <div className="mt-3">
-            <label
-              htmlFor="file"
-              className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/30 px-6 py-10 transition-colors hover:bg-muted/50"
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={onDrop}
+              onClick={openPicker}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") openPicker();
+              }}
+              className={
+                "flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-10 transition-all " +
+                (isDragging
+                  ? "border-primary bg-primary/10 scale-[1.01]"
+                  : "border-border bg-muted/40 hover:bg-muted/60")
+              }
             >
-              <Upload className="mb-2 h-6 w-6 text-muted-foreground" />
+              <Upload className={"mb-2 h-7 w-7 " + (isDragging ? "text-primary" : "text-muted-foreground")} />
               <span className="text-sm font-medium">
-                {file ? file.name : "Click to upload or drop a PDF"}
+                {file ? file.name : "Drag & drop a PDF here"}
               </span>
-              {totalPages > 0 && (
-                <span className="mt-1 text-xs text-muted-foreground">{totalPages} pages</span>
-              )}
+              <span className="mt-1 text-xs text-muted-foreground">
+                {totalPages > 0 ? `${totalPages} pages` : "or click to browse"}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                className="mt-4"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openPicker();
+                }}
+              >
+                Choose file
+              </Button>
               <input
+                ref={fileInputRef}
                 id="file"
                 type="file"
                 accept="application/pdf"
@@ -146,13 +227,13 @@ function Index() {
                   if (f) handleFile(f);
                 }}
               />
-            </label>
+            </div>
           </div>
         </section>
 
         {/* Page input */}
         {pdf && (
-          <section className="mt-6 rounded-2xl border bg-card p-6 shadow-sm">
+          <section className="mt-6 rounded-2xl border bg-card/80 backdrop-blur p-6 shadow-sm">
             <Label htmlFor="pages" className="text-sm font-medium">
               2. Pages to extract
             </Label>
@@ -188,11 +269,12 @@ function Index() {
 
         {/* Previews */}
         {pdf && parsed.ranges.length > 0 && (
-          <section className="mt-6 rounded-2xl border bg-card p-6 shadow-sm">
+          <section className="mt-6 rounded-2xl border bg-card/80 backdrop-blur p-6 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-medium">Preview</h2>
               <span className="text-xs text-muted-foreground">
                 {parsed.pages.length} unique page(s) selected
+                {!thumbsReady && " · rendering…"}
               </span>
             </div>
             <RangePreview
@@ -201,6 +283,7 @@ function Index() {
               ranges={parsed.ranges}
               selectedRangeIndex={selectedRange}
               onSelectRange={setSelectedRange}
+              onThumbRendered={handleThumbRendered}
             />
           </section>
         )}
@@ -210,11 +293,15 @@ function Index() {
           <div className="mt-6 flex justify-end gap-3">
             <Button size="lg" variant="outline" onClick={handleClear}>
               <RotateCcw className="mr-2 h-4 w-4" />
-              Clear
+              Upload new PDF
             </Button>
             <Button size="lg" onClick={handleExtract} disabled={!canExtract || extracting}>
               <Download className="mr-2 h-4 w-4" />
-              {extracting ? "Extracting…" : "Extract pages"}
+              {extracting
+                ? "Extracting…"
+                : !thumbsReady && parsed.pages.length > 0
+                  ? "Rendering previews…"
+                  : "Extract pages"}
             </Button>
           </div>
         )}
