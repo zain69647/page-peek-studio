@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PDFDocument } from "pdf-lib";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { pdfjsLib } from "@/lib/pdfWorker";
+import { getPdfJs } from "@/lib/pdfWorker";
 import { parsePageInput } from "@/lib/parsePages";
 import { RangePreview } from "@/components/RangePreview";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,7 @@ function Index() {
     try {
       const bytes = await f.arrayBuffer();
       fileBytesRef.current = bytes;
+      const pdfjsLib = await getPdfJs();
       const doc = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
       setPdf(doc);
       setTotalPages(doc.numPages);
