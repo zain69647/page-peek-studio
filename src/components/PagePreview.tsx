@@ -8,9 +8,10 @@ interface PagePreviewProps {
   selected?: boolean;
   onClick?: () => void;
   width?: number;
+  onRendered?: () => void;
 }
 
-export function PagePreview({ pdf, pageNumber, selected, onClick, width = 140 }: PagePreviewProps) {
+export function PagePreview({ pdf, pageNumber, selected, onClick, width = 140, onRendered }: PagePreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -38,11 +39,15 @@ export function PagePreview({ pdf, pageNumber, selected, onClick, width = 140 }:
         canvas.style.height = `${scaled.height}px`;
         const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
         await page.render({ canvas, viewport: scaled, transform }).promise;
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          onRendered?.();
+        }
       } catch (e) {
         if (!cancelled) {
           setError(true);
           setLoading(false);
+          onRendered?.();
         }
       }
     })();
