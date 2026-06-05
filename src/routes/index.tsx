@@ -205,9 +205,13 @@ function Index() {
           </section>
         )}
 
-        {/* Extract */}
+        {/* Extract / Clear */}
         {pdf && (
-          <div className="mt-6 flex justify-end">
+          <div className="mt-6 flex justify-end gap-3">
+            <Button size="lg" variant="outline" onClick={handleClear}>
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Clear
+            </Button>
             <Button size="lg" onClick={handleExtract} disabled={!canExtract || extracting}>
               <Download className="mr-2 h-4 w-4" />
               {extracting ? "Extracting…" : "Extract pages"}
