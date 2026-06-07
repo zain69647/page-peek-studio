@@ -65,6 +65,7 @@ function Index() {
   const [file, setFile] = useState<File | null>(null);
   const [totalPages, setTotalPages] = useState(0);
   const [pageInput, setPageInput] = useState("");
+  const [customName, setCustomName] = useState("");
   const [loadingPdf, setLoadingPdf] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +82,7 @@ function Index() {
     setLoadingPdf(true);
     setTotalPages(0);
     setPageInput("");
+    setCustomName("");
     try {
       const bytes = await f.arrayBuffer();
       fileBytesRef.current = bytes;
@@ -122,8 +124,8 @@ function Index() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const base = file?.name.replace(/\.pdf$/i, "") ?? "extracted";
-      a.download = `${base}-pages.pdf`;
+      const base = customName.trim() || file?.name.replace(/\.pdf$/i, "") || "extracted";
+      a.download = `${base}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -132,12 +134,13 @@ function Index() {
     } finally {
       setExtracting(false);
     }
-  }, [parsed.pages, file]);
+  }, [parsed.pages, file, customName]);
 
   const handleClear = useCallback(() => {
     setFile(null);
     setTotalPages(0);
     setPageInput("");
+    setCustomName("");
     setError(null);
     fileBytesRef.current = null;
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -272,6 +275,24 @@ function Index() {
                 {parsed.pages.length} unique page(s) selected
               </p>
             )}
+          </section>
+        )}
+
+        {file && (
+          <section className="mt-6 rounded-2xl border bg-card/80 backdrop-blur p-6 shadow-sm">
+            <Label htmlFor="rename" className="text-sm font-medium">
+              3. Rename output file (optional)
+            </Label>
+            <Input
+              id="rename"
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              placeholder={file?.name.replace(/\.pdf$/i, "") ?? "extracted"}
+              className="mt-3"
+            />
+            <p className="mt-2 text-xs text-muted-foreground">
+              Leave blank to use the original file name.
+            </p>
           </section>
         )}
 
