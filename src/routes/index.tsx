@@ -279,6 +279,24 @@ function Index() {
         )}
 
         {file && (
+          <section className="mt-6 rounded-2xl border bg-card/80 backdrop-blur p-6 shadow-sm">
+            <Label htmlFor="rename" className="text-sm font-medium">
+              3. Rename output file (optional)
+            </Label>
+            <Input
+              id="rename"
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              placeholder={file?.name.replace(/\.pdf$/i, "") ?? "extracted"}
+              className="mt-3"
+            />
+            <p className="mt-2 text-xs text-muted-foreground">
+              Leave blank to use the original file name.
+            </p>
+          </section>
+        )}
+
+        {file && (
           <div className="mt-6 flex justify-end gap-3">
             <Button size="lg" variant="outline" onClick={handleClear}>
               <RotateCcw className="mr-2 h-4 w-4" />
