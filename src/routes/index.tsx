@@ -1,10 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { PDFDocument } from "pdf-lib";
-import type { PDFDocumentProxy } from "pdfjs-dist";
-import { getPdfJs } from "@/lib/pdfWorker";
-import { parsePageInput } from "@/lib/parsePages";
-import { RangePreview } from "@/components/RangePreview";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,28 +10,65 @@ import { FileText, Upload, Download, AlertTriangle, RotateCcw } from "lucide-rea
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "PDF Page Extractor — Preview & Extract" },
+      { title: "PDF Page Extractor" },
       {
         name: "description",
-        content:
-          "Extract specific pages from PDFs with live visual previews. 100% local in your browser.",
+        content: "Extract specific pages from PDFs. 100% local in your browser.",
       },
     ],
   }),
   component: Index,
 });
 
+interface ParseResult {
+  pages: number[];
+  invalid: string[];
+  outOfBounds: number[];
+}
+
+function parsePageInput(input: string, totalPages?: number): ParseResult {
+  const result: ParseResult = { pages: [], invalid: [], outOfBounds: [] };
+  if (!input.trim()) return result;
+  const parts = input.split(",").map((p) => p.trim()).filter(Boolean);
+  const set = new Set<number>();
+  for (const part of parts) {
+    const range = part.match(/^(\d+)\s*-\s*(\d+)$/);
+    const single = part.match(/^(\d+)$/);
+    if (range) {
+      const s = parseInt(range[1], 10);
+      const e = parseInt(range[2], 10);
+      if (s < 1 || e < s) {
+        result.invalid.push(part);
+        continue;
+      }
+      for (let i = s; i <= e; i++) {
+        if (totalPages && i > totalPages) result.outOfBounds.push(i);
+        else set.add(i);
+      }
+    } else if (single) {
+      const n = parseInt(single[1], 10);
+      if (n < 1) {
+        result.invalid.push(part);
+        continue;
+      }
+      if (totalPages && n > totalPages) result.outOfBounds.push(n);
+      else set.add(n);
+    } else {
+      result.invalid.push(part);
+    }
+  }
+  result.pages = Array.from(set).sort((a, b) => a - b);
+  return result;
+}
+
 function Index() {
   const [file, setFile] = useState<File | null>(null);
-  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [totalPages, setTotalPages] = useState(0);
   const [pageInput, setPageInput] = useState("");
-  const [selectedRange, setSelectedRange] = useState<number | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [renderedCount, setRenderedCount] = useState(0);
   const fileBytesRef = useRef<ArrayBuffer | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -46,18 +79,13 @@ function Index() {
     }
     setError(null);
     setLoadingPdf(true);
-    setPdf(null);
     setTotalPages(0);
     setPageInput("");
-    setSelectedRange(null);
-    setRenderedCount(0);
     try {
       const bytes = await f.arrayBuffer();
       fileBytesRef.current = bytes;
-      const pdfjsLib = await getPdfJs();
-      const doc = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
-      setPdf(doc);
-      setTotalPages(doc.numPages);
+      const doc = await PDFDocument.load(bytes.slice(0));
+      setTotalPages(doc.getPageCount());
       setFile(f);
     } catch (e) {
       setError("Couldn't read that PDF. Make sure it isn't password-protected.");
@@ -72,30 +100,9 @@ function Index() {
     [pageInput, totalPages],
   );
 
-  useEffect(() => {
-    setSelectedRange(null);
-    setRenderedCount(0);
-  }, [pageInput, pdf]);
-
-  const expectedThumbs = useMemo(() => {
-    let n = 0;
-    for (const r of parsed.ranges) {
-      if (r.start <= totalPages) n += 1;
-      if (r.start !== r.end && r.end <= totalPages) n += 1;
-    }
-    return n;
-  }, [parsed.ranges, totalPages]);
-
-  const thumbsReady = expectedThumbs === 0 || renderedCount >= expectedThumbs;
-
-  const handleThumbRendered = useCallback(() => {
-    setRenderedCount((c) => c + 1);
-  }, []);
-
   const canExtract =
-    !!pdf &&
+    !!file &&
     !loadingPdf &&
-    thumbsReady &&
     parsed.pages.length > 0 &&
     parsed.invalid.length === 0 &&
     parsed.outOfBounds.length === 0;
@@ -129,12 +136,9 @@ function Index() {
 
   const handleClear = useCallback(() => {
     setFile(null);
-    setPdf(null);
     setTotalPages(0);
     setPageInput("");
-    setSelectedRange(null);
     setError(null);
-    setRenderedCount(0);
     fileBytesRef.current = null;
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
@@ -153,7 +157,7 @@ function Index() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-background to-violet-50">
-      <div className="mx-auto max-w-5xl px-4 py-10 md:py-16">
+      <div className="mx-auto max-w-3xl px-4 py-10 md:py-16">
         <header className="mb-10 text-center">
           <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-lg mb-4">
             <FileText className="h-6 w-6" />
@@ -162,11 +166,10 @@ function Index() {
             PDF Page Extractor
           </h1>
           <p className="mt-2 text-muted-foreground">
-            Pick pages, preview them, then export — all in your browser.
+            Pick pages and export — all in your browser.
           </p>
         </header>
 
-        {/* Upload */}
         <section className="rounded-2xl border bg-card/80 backdrop-blur p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <Label className="text-sm font-medium">1. Choose a PDF</Label>
@@ -231,8 +234,7 @@ function Index() {
           </div>
         </section>
 
-        {/* Page input */}
-        {pdf && (
+        {file && (
           <section className="mt-6 rounded-2xl border bg-card/80 backdrop-blur p-6 shadow-sm">
             <Label htmlFor="pages" className="text-sm font-medium">
               2. Pages to extract
@@ -264,32 +266,16 @@ function Index() {
                 </AlertDescription>
               </Alert>
             )}
-          </section>
-        )}
 
-        {/* Previews */}
-        {pdf && parsed.ranges.length > 0 && (
-          <section className="mt-6 rounded-2xl border bg-card/80 backdrop-blur p-6 shadow-sm">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-medium">Preview</h2>
-              <span className="text-xs text-muted-foreground">
+            {parsed.pages.length > 0 && (
+              <p className="mt-3 text-xs text-muted-foreground">
                 {parsed.pages.length} unique page(s) selected
-                {!thumbsReady && " · rendering…"}
-              </span>
-            </div>
-            <RangePreview
-              pdf={pdf}
-              totalPages={totalPages}
-              ranges={parsed.ranges}
-              selectedRangeIndex={selectedRange}
-              onSelectRange={setSelectedRange}
-              onThumbRendered={handleThumbRendered}
-            />
+              </p>
+            )}
           </section>
         )}
 
-        {/* Extract / Clear */}
-        {pdf && (
+        {file && (
           <div className="mt-6 flex justify-end gap-3">
             <Button size="lg" variant="outline" onClick={handleClear}>
               <RotateCcw className="mr-2 h-4 w-4" />
@@ -297,11 +283,7 @@ function Index() {
             </Button>
             <Button size="lg" onClick={handleExtract} disabled={!canExtract || extracting}>
               <Download className="mr-2 h-4 w-4" />
-              {extracting
-                ? "Extracting…"
-                : !thumbsReady && parsed.pages.length > 0
-                  ? "Rendering previews…"
-                  : "Extract pages"}
+              {extracting ? "Extracting…" : "Extract pages"}
             </Button>
           </div>
         )}
