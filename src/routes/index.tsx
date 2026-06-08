@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { PDFDocument } from "pdf-lib";
-import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -173,25 +172,15 @@ function Index() {
         outputs.push({ name: `${name}.pdf`, bytes });
       }
 
-      if (outputs.length === 1) {
-        const blob = new Blob([outputs[0].bytes as BlobPart], { type: "application/pdf" });
+      outputs.forEach((o) => {
+        const blob = new Blob([o.bytes as BlobPart], { type: "application/pdf" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = outputs[0].name;
+        a.download = o.name;
         a.click();
         URL.revokeObjectURL(url);
-      } else {
-        const zip = new JSZip();
-        outputs.forEach((o) => zip.file(o.name, o.bytes));
-        const blob = await zip.generateAsync({ type: "blob" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${baseName}-parts.zip`;
-        a.click();
-        URL.revokeObjectURL(url);
-      }
+      });
     } catch (e) {
       setError("Extraction failed. Please try again.");
       console.error(e);
@@ -312,7 +301,7 @@ function Index() {
               </Button>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Each part becomes its own PDF. Multiple parts download as a ZIP.
+              Each part becomes its own PDF and downloads separately.
             </p>
 
             <div className="mt-4 space-y-4">
@@ -405,7 +394,7 @@ function Index() {
               {extracting
                 ? "Extracting…"
                 : parts.length > 1
-                  ? "Download ZIP"
+                  ? "Download PDFs"
                   : "Extract pages"}
             </Button>
           </div>
