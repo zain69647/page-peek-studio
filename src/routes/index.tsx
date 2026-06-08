@@ -1,11 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { PDFDocument } from "pdf-lib";
+import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { FileText, Upload, Download, AlertTriangle, RotateCcw } from "lucide-react";
+import {
+  FileText,
+  Upload,
+  Download,
+  AlertTriangle,
+  RotateCcw,
+  Plus,
+  X,
+} from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -13,7 +22,8 @@ export const Route = createFileRoute("/")({
       { title: "PDF Page Extractor" },
       {
         name: "description",
-        content: "Extract specific pages from PDFs. 100% local in your browser.",
+        content:
+          "Split a PDF into multiple named parts. 100% local in your browser.",
       },
     ],
   }),
@@ -61,11 +71,27 @@ function parsePageInput(input: string, totalPages?: number): ParseResult {
   return result;
 }
 
+interface Part {
+  id: string;
+  name: string;
+  input: string;
+}
+
+function sanitizeName(name: string, fallback: string) {
+  const cleaned = name.trim().replace(/[\\/:*?"<>|]+/g, "").replace(/\.pdf$/i, "");
+  return cleaned || fallback;
+}
+
+function newId() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
 function Index() {
   const [file, setFile] = useState<File | null>(null);
   const [totalPages, setTotalPages] = useState(0);
-  const [pageInput, setPageInput] = useState("");
-  const [customName, setCustomName] = useState("");
+  const [parts, setParts] = useState<Part[]>([
+    { id: newId(), name: "", input: "" },
+  ]);
   const [loadingPdf, setLoadingPdf] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,14 +107,14 @@ function Index() {
     setError(null);
     setLoadingPdf(true);
     setTotalPages(0);
-    setPageInput("");
-    setCustomName("");
     try {
       const bytes = await f.arrayBuffer();
       fileBytesRef.current = bytes;
       const doc = await PDFDocument.load(bytes.slice(0));
       setTotalPages(doc.getPageCount());
       setFile(f);
+      const base = f.name.replace(/\.pdf$/i, "");
+      setParts([{ id: newId(), name: `${base}-part1`, input: "" }]);
     } catch (e) {
       setError("Couldn't read that PDF. Make sure it isn't password-protected.");
       console.error(e);
@@ -97,50 +123,87 @@ function Index() {
     }
   }, []);
 
-  const parsed = useMemo(
-    () => parsePageInput(pageInput, totalPages || undefined),
-    [pageInput, totalPages],
+  const parsedParts = useMemo(
+    () => parts.map((p) => ({ ...p, parsed: parsePageInput(p.input, totalPages || undefined) })),
+    [parts, totalPages],
   );
 
   const canExtract =
     !!file &&
     !loadingPdf &&
-    parsed.pages.length > 0 &&
-    parsed.invalid.length === 0 &&
-    parsed.outOfBounds.length === 0;
+    parts.length > 0 &&
+    parsedParts.every(
+      (p) =>
+        p.parsed.pages.length > 0 &&
+        p.parsed.invalid.length === 0 &&
+        p.parsed.outOfBounds.length === 0,
+    );
+
+  const updatePart = (id: string, patch: Partial<Part>) =>
+    setParts((cur) => cur.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+
+  const addPart = () => {
+    const base = file?.name.replace(/\.pdf$/i, "") ?? "part";
+    setParts((cur) => [
+      ...cur,
+      { id: newId(), name: `${base}-part${cur.length + 1}`, input: "" },
+    ]);
+  };
+
+  const removePart = (id: string) =>
+    setParts((cur) => (cur.length <= 1 ? cur : cur.filter((p) => p.id !== id)));
 
   const handleExtract = useCallback(async () => {
-    if (!fileBytesRef.current || parsed.pages.length === 0) return;
+    if (!fileBytesRef.current || !canExtract) return;
     setExtracting(true);
     setError(null);
     try {
       const src = await PDFDocument.load(fileBytesRef.current);
-      const out = await PDFDocument.create();
-      const indices = parsed.pages.map((p) => p - 1);
-      const copied = await out.copyPages(src, indices);
-      copied.forEach((p) => out.addPage(p));
-      const bytes = await out.save();
-      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const base = customName.trim() || file?.name.replace(/\.pdf$/i, "") || "extracted";
-      a.download = `${base}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const baseName = file?.name.replace(/\.pdf$/i, "") || "extracted";
+
+      const outputs: { name: string; bytes: Uint8Array }[] = [];
+      for (let i = 0; i < parsedParts.length; i++) {
+        const part = parsedParts[i];
+        const out = await PDFDocument.create();
+        const indices = part.parsed.pages.map((p) => p - 1);
+        const copied = await out.copyPages(src, indices);
+        copied.forEach((p) => out.addPage(p));
+        const bytes = await out.save();
+        const name = sanitizeName(part.name, `${baseName}-part${i + 1}`);
+        outputs.push({ name: `${name}.pdf`, bytes });
+      }
+
+      if (outputs.length === 1) {
+        const blob = new Blob([outputs[0].bytes as BlobPart], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = outputs[0].name;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const zip = new JSZip();
+        outputs.forEach((o) => zip.file(o.name, o.bytes));
+        const blob = await zip.generateAsync({ type: "blob" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${baseName}-parts.zip`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
     } catch (e) {
       setError("Extraction failed. Please try again.");
       console.error(e);
     } finally {
       setExtracting(false);
     }
-  }, [parsed.pages, file, customName]);
+  }, [canExtract, file, parsedParts]);
 
   const handleClear = useCallback(() => {
     setFile(null);
     setTotalPages(0);
-    setPageInput("");
-    setCustomName("");
+    setParts([{ id: newId(), name: "", input: "" }]);
     setError(null);
     fileBytesRef.current = null;
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -169,7 +232,7 @@ function Index() {
             PDF Page Extractor
           </h1>
           <p className="mt-2 text-muted-foreground">
-            Pick pages and export — all in your browser.
+            Split a PDF into multiple named parts — all in your browser.
           </p>
         </header>
 
@@ -239,60 +302,95 @@ function Index() {
 
         {file && (
           <section className="mt-6 rounded-2xl border bg-card/80 backdrop-blur p-6 shadow-sm">
-            <Label htmlFor="pages" className="text-sm font-medium">
-              2. Pages to extract
-            </Label>
-            <Input
-              id="pages"
-              value={pageInput}
-              onChange={(e) => setPageInput(e.target.value)}
-              placeholder="e.g. 1, 5, 10-20"
-              className="mt-3"
-            />
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">
+                2. Define parts {parts.length > 1 && <span className="text-muted-foreground">({parts.length})</span>}
+              </Label>
+              <Button size="sm" variant="outline" onClick={addPart}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add part
+              </Button>
+            </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Use commas and ranges. Example: <code>1, 5, 10-20</code>
+              Each part becomes its own PDF. Multiple parts download as a ZIP.
             </p>
 
-            {(parsed.invalid.length > 0 || parsed.outOfBounds.length > 0) && (
-              <Alert variant="destructive" className="mt-4">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>
-                  {parsed.invalid.length > 0 && (
-                    <div>Invalid: {parsed.invalid.join(", ")}</div>
-                  )}
-                  {parsed.outOfBounds.length > 0 && (
+            <div className="mt-4 space-y-4">
+              {parsedParts.map((p, idx) => (
+                <div
+                  key={p.id}
+                  className="rounded-xl border bg-background/60 p-4"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Part {idx + 1}
+                    </span>
+                    {parts.length > 1 && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        onClick={() => removePart(p.id)}
+                        aria-label={`Remove part ${idx + 1}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
                     <div>
-                      Out of range (PDF has {totalPages} pages):{" "}
-                      {parsed.outOfBounds.join(", ")}
+                      <Label htmlFor={`name-${p.id}`} className="text-xs">
+                        File name
+                      </Label>
+                      <Input
+                        id={`name-${p.id}`}
+                        value={p.name}
+                        onChange={(e) => updatePart(p.id, { name: e.target.value })}
+                        placeholder={`part-${idx + 1}`}
+                        className="mt-1"
+                      />
                     </div>
+                    <div>
+                      <Label htmlFor={`pages-${p.id}`} className="text-xs">
+                        Pages
+                      </Label>
+                      <Input
+                        id={`pages-${p.id}`}
+                        value={p.input}
+                        onChange={(e) => updatePart(p.id, { input: e.target.value })}
+                        placeholder="e.g. 1, 5, 10-20"
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
+
+                  {(p.parsed.invalid.length > 0 || p.parsed.outOfBounds.length > 0) && (
+                    <Alert variant="destructive" className="mt-3">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        {p.parsed.invalid.length > 0 && (
+                          <div>Invalid: {p.parsed.invalid.join(", ")}</div>
+                        )}
+                        {p.parsed.outOfBounds.length > 0 && (
+                          <div>
+                            Out of range (PDF has {totalPages} pages):{" "}
+                            {p.parsed.outOfBounds.join(", ")}
+                          </div>
+                        )}
+                      </AlertDescription>
+                    </Alert>
                   )}
-                </AlertDescription>
-              </Alert>
-            )}
 
-            {parsed.pages.length > 0 && (
-              <p className="mt-3 text-xs text-muted-foreground">
-                {parsed.pages.length} unique page(s) selected
-              </p>
-            )}
-          </section>
-        )}
-
-        {file && (
-          <section className="mt-6 rounded-2xl border bg-card/80 backdrop-blur p-6 shadow-sm">
-            <Label htmlFor="rename" className="text-sm font-medium">
-              3. Rename output file (optional)
-            </Label>
-            <Input
-              id="rename"
-              value={customName}
-              onChange={(e) => setCustomName(e.target.value)}
-              placeholder={file?.name.replace(/\.pdf$/i, "") ?? "extracted"}
-              className="mt-3"
-            />
-            <p className="mt-2 text-xs text-muted-foreground">
-              Leave blank to use the original file name.
-            </p>
+                  {p.parsed.pages.length > 0 &&
+                    p.parsed.invalid.length === 0 &&
+                    p.parsed.outOfBounds.length === 0 && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {p.parsed.pages.length} page(s) selected
+                      </p>
+                    )}
+                </div>
+              ))}
+            </div>
           </section>
         )}
 
@@ -304,7 +402,11 @@ function Index() {
             </Button>
             <Button size="lg" onClick={handleExtract} disabled={!canExtract || extracting}>
               <Download className="mr-2 h-4 w-4" />
-              {extracting ? "Extracting…" : "Extract pages"}
+              {extracting
+                ? "Extracting…"
+                : parts.length > 1
+                  ? "Download ZIP"
+                  : "Extract pages"}
             </Button>
           </div>
         )}
